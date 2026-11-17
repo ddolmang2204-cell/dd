@@ -1,0 +1,16 @@
+{
+  "name": "liuxese-bot",
+  "version": "1.0.0",
+  "description": "LIUXESE 코린 강명 에디션 봇 클러스터",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.16.0",
+    "discord.js": "^13.17.1",
+    "dotenv": "^16.4.5",
+    "sodium": "^3.0.2",
+    "tweetnacl": "^1.0.3"
+  }
+}
