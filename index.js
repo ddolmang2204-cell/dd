@@ -1,6 +1,6 @@
 /**
  * =====================================================================
- * Project: LIUXESE (코린 강명 에디션) - Cluster Voice & Audio Fix Version
+ * Project: LIUXESE (코린 강명 에디션) - Voice 2s Delay Version
  * =====================================================================
  */
 
@@ -475,7 +475,9 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
 
-                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 클러스터 봇 10마리 해당 음성 채널 입장을 시작합니다.`);
+                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 봇 10마리가 2초 간격으로 순차 입장을 시작합니다.`);
+                    
+                    // 2초(2000ms) 간격으로 10마리 순차 입장
                     for (const cli of myClients) {
                         try {
                             const g = cli.guilds.cache.get(guildId);
@@ -489,7 +491,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                                 });
                             }
                         } catch (e) {}
-                        await new Promise(r => setTimeout(r, 100));
+                        await new Promise(r => setTimeout(r, 2000));
                     }
                     return;
                 }
@@ -664,4 +666,4 @@ const setupCluster = (tokens, adminId, payloadType) => {
 };
 
 setupCluster(TOKENS_A, ADMIN_A_ID, 'A');
-setupCluster(TOKENS_B, ADMIN_B_ID, 'B');
+setupCluster(TOKENS_B, ADMIN_B_ID, 'B'); 
