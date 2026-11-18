@@ -1,7 +1,6 @@
 /**
  * =====================================================================
- * Project: LIUXESE (코린 강명 에디션) - Env & Pure Bot Version
- * Architecture: discord.js@13 (@discordjs/voice)
+ * Project: LIUXESE (코린 강명 에디션) - Express Web Server + Bot Cluster
  * =====================================================================
  */
 
@@ -10,6 +9,19 @@ const { Client } = require('discord.js');
 const { joinVoiceChannel, getVoiceConnection, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
+const express = require('express');
+
+// Render 포트 감지용 Express 웹서버 세팅 (필수)
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('LIUXESE (코린 강명 에디션) Bot is alive!');
+});
+
+app.listen(PORT, () => {
+    console.log(`[SYS] Web server is running and listening on port ${PORT}`);
+});
 
 // 관리자 정보 정의
 const ADMIN_A_ID = "1429412320194592811";
@@ -120,7 +132,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 const myIndex = myClients.indexOf(client);
                 const currentPrefix = state.prefix;
 
-                // [최우선 긴급 정지 gaeum] 도배 큐 밀림 방지를 위해 맨 위에서 즉시 차단
+                // [최우선 긴급 정지 gaeum] - 메시지 처리 최상단으로 이동하여 즉각 반응 보장
                 if (message.content && message.content.startsWith(currentPrefix)) {
                     const rawCmd = message.content.slice(currentPrefix.length).trim().split(/ +/)[0];
                     if (rawCmd.toLowerCase() === "gaeum") {
@@ -139,14 +151,12 @@ const setupCluster = (tokens, adminId, payloadType) => {
                             delete state.sfTargets[key];
                         }
 
-                        if (myIndex === 0) {
-                            const stopMsg = "```\n[-] 모든 도배, 장애타 및 테러를 즉시 중지합니다.\n```";
-                            try {
-                                if (message.editable) await message.edit(stopMsg);
-                                else await message.channel.send(stopMsg);
-                            } catch (e) {
-                                try { await message.channel.send(stopMsg); } catch (err) {}
-                            }
+                        const stopMsg = "```\n[-] 모든 도배, 장애타 및 테러를 즉시 중지합니다.\n```";
+                        try {
+                            if (message.editable) await message.edit(stopMsg);
+                            else await message.channel.send(stopMsg);
+                        } catch (e) {
+                            try { await message.channel.send(stopMsg); } catch (err) {}
                         }
                         return;
                     }
@@ -239,7 +249,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         const currentClient = myClients[botIndex];
                         if (currentClient) {
                             currentClient.channels.fetch(channelId).then(ch => {
-                                if (ch) {
+                                if (ch && state.relayTimers) { // 실행 중 검사 강화
                                     const textToSend = getContentFunc();
                                     ch.send(textToSend).catch(() => {});
                                 }
@@ -247,7 +257,9 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         }
 
                         botIndex = (botIndex + 1) % myClients.length;
-                        state.relayTimers = setTimeout(runNext, 100);
+                        if (state.relayTimers) {
+                            state.relayTimers = setTimeout(runNext, 100);
+                        }
                     };
 
                     state.relayTimers = setTimeout(runNext, 20);
