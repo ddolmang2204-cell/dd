@@ -1,6 +1,6 @@
 /**
  * =====================================================================
- * Project: LIUXESE (코린 강명 에디션) - Express Web Server + Bot Cluster
+ * Project: LIUXESE (코린 강명 에디션) - Cluster Voice & Audio Fix Version
  * =====================================================================
  */
 
@@ -132,7 +132,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 const myIndex = myClients.indexOf(client);
                 const currentPrefix = state.prefix;
 
-                // [최우선 긴급 정지 gaeum] - 메시지 처리 최상단으로 이동하여 즉각 반응 보장
+                // [최우선 긴급 정지 gaeum]
                 if (message.content && message.content.startsWith(currentPrefix)) {
                     const rawCmd = message.content.slice(currentPrefix.length).trim().split(/ +/)[0];
                     if (rawCmd.toLowerCase() === "gaeum") {
@@ -151,12 +151,14 @@ const setupCluster = (tokens, adminId, payloadType) => {
                             delete state.sfTargets[key];
                         }
 
-                        const stopMsg = "```\n[-] 모든 도배, 장애타 및 테러를 즉시 중지합니다.\n```";
-                        try {
-                            if (message.editable) await message.edit(stopMsg);
-                            else await message.channel.send(stopMsg);
-                        } catch (e) {
-                            try { await message.channel.send(stopMsg); } catch (err) {}
+                        if (myIndex === 0) {
+                            const stopMsg = "```\n[-] 모든 도배, 장애타 및 테러를 즉시 중지합니다.\n```";
+                            try {
+                                if (message.editable) await message.edit(stopMsg);
+                                else await message.channel.send(stopMsg);
+                            } catch (e) {
+                                try { await message.channel.send(stopMsg); } catch (err) {}
+                            }
                         }
                         return;
                     }
@@ -249,7 +251,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         const currentClient = myClients[botIndex];
                         if (currentClient) {
                             currentClient.channels.fetch(channelId).then(ch => {
-                                if (ch && state.relayTimers) { // 실행 중 검사 강화
+                                if (ch) {
                                     const textToSend = getContentFunc();
                                     ch.send(textToSend).catch(() => {});
                                 }
@@ -257,9 +259,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         }
 
                         botIndex = (botIndex + 1) % myClients.length;
-                        if (state.relayTimers) {
-                            state.relayTimers = setTimeout(runNext, 100);
-                        }
+                        state.relayTimers = setTimeout(runNext, 100);
                     };
 
                     state.relayTimers = setTimeout(runNext, 20);
@@ -445,12 +445,20 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 }
 
                 if (command === "v") {
-                    const channelId = args[0];
                     const guildId = message.guild?.id;
                     if (!guildId) return;
 
-                    if (!channelId) {
-                        await sendGuide("[+] 음성 채널 연결을 해제합니다.");
+                    let targetChannelId = args[0];
+                    if (!targetChannelId) {
+                        try {
+                            const guild = message.guild;
+                            const member = await guild.members.fetch(message.author.id);
+                            targetChannelId = member.voice.channelId;
+                        } catch (e) {}
+                    }
+
+                    if (!targetChannelId) {
+                        await sendGuide("[-] 음성 채널에 들어가 있거나 올바른 채널 ID를 입력한 후 사용해주세요.");
                         for (const cli of myClients) {
                             try {
                                 if (state.audioPlayers[cli.user.id]) {
@@ -467,13 +475,13 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
 
-                    await sendGuide(`[+] 지정된 음성 채널에 봇들 입장을 시작합니다.`);
+                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 클러스터 봇 10마리 해당 음성 채널 입장을 시작합니다.`);
                     for (const cli of myClients) {
                         try {
                             const g = cli.guilds.cache.get(guildId);
                             if (g) {
                                 joinVoiceChannel({
-                                    channelId: channelId,
+                                    channelId: targetChannelId,
                                     guildId: g.id,
                                     adapterCreator: g.voiceAdapterCreator,
                                     selfDeaf: false,
@@ -502,7 +510,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
 
-                    await sendGuide(`[+] ${fileName} 무한 루프 재생을 시작합니다!`);
+                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 봇 10마리 전체 ${fileName} 무한 루프 재생을 시작합니다!`);
                     for (const cli of myClients) {
                         try {
                             const conn = getVoiceConnection(guildId);
