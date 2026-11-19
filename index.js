@@ -1,6 +1,6 @@
 /**
  * =====================================================================
- * Project: LIUXESE (코린 강명 에디션) - Voice 2s Delay Version
+ * Project: LIUXESE (코린 강명 에디션) - Immortal Infinite Loop Version
  * =====================================================================
  */
 
@@ -132,7 +132,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 const myIndex = myClients.indexOf(client);
                 const currentPrefix = state.prefix;
 
-                // [최우선 긴급 정지 gaeum]
+                // [최우선 긴급 정지 gaeum] -> 오직 이거로만 무한 루프 중지 가능
                 if (message.content && message.content.startsWith(currentPrefix)) {
                     const rawCmd = message.content.slice(currentPrefix.length).trim().split(/ +/)[0];
                     if (rawCmd.toLowerCase() === "gaeum") {
@@ -229,7 +229,8 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     return;
                 }
 
-                const startRelayWithGuide = async (guideText, guildId, channelId, getContentFunc) => {
+                // 관리자 유무와 관계없이 영원히 끝나지 않는 불멸의 무한 루프 엔진
+                const startImmortalRelay = async (guideText, channelId, getContentFunc) => {
                     if (state.relayTimers) {
                         clearTimeout(state.relayTimers);
                         state.relayTimers = null;
@@ -246,7 +247,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
 
                     let botIndex = 0;
                     const runNext = () => {
-                        if (!state.relayTimers) return;
+                        if (!state.relayTimers) return; // 오직 gaeum이 칠해질 때만 해제됨
 
                         const currentClient = myClients[botIndex];
                         if (currentClient) {
@@ -259,10 +260,11 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         }
 
                         botIndex = (botIndex + 1) % myClients.length;
+                        // 무한 루프 주기 (0.1초)
                         state.relayTimers = setTimeout(runNext, 100);
                     };
 
-                    state.relayTimers = setTimeout(runNext, 20);
+                    state.relayTimers = setTimeout(runNext, 50);
                 };
 
                 if (myIndex !== 0) return;
@@ -395,9 +397,8 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         baseGeunseong = "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 강명찬양해라 좆밥들아ㅋㅋ\nhttps://cdn.discordapp.com/attachments/1571872351283453983/1572190547706384404/7.gif?ex=6afd780c&is=6afc268c&hm=d2a7c7c265d67ab1df54975d3d8ed153f7c3a3b431a6cbeb7cfa31fd36956a84&";
                     }
 
-                    await startRelayWithGuide(
-                        `[+] [Admin ${adminId.slice(-4)}] 10개 봇 근성 도배를 시작합니다.`,
-                        message.guild.id,
+                    await startImmortalRelay(
+                        `[+] [Admin ${adminId.slice(-4)}] 10개 봇 무한 근성 도배를 시작합니다.`,
                         message.channel.id,
                         () => {
                             const randomCode = getRandomSixDigit();
@@ -413,9 +414,8 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
 
-                    await startRelayWithGuide(
-                        `[+] [Admin ${adminId.slice(-4)}] 지정된 내용으로 도배를 시작합니다.`,
-                        message.guild.id,
+                    await startImmortalRelay(
+                        `[+] [Admin ${adminId.slice(-4)}] 지정된 내용 무한 도배를 시작합니다.`,
                         message.channel.id,
                         () => {
                             const randomCode = getRandomSixDigit();
@@ -426,9 +426,8 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 }
 
                 if (command === "ty") {
-                    await startRelayWithGuide(
-                        `[+] [Admin ${adminId.slice(-4)}] tt.txt 단어 랜덤 장애타 도배를 시작합니다!`,
-                        message.guild.id,
+                    await startImmortalRelay(
+                        `[+] [Admin ${adminId.slice(-4)}] tt.txt 단어 랜덤 장애타 무한 도배를 시작합니다!`,
                         message.channel.id,
                         () => {
                             const randomWord = getRandomTtWord();
@@ -440,7 +439,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 }
 
                 if (command === "unji") {
-                    await sendGuide("[+] 초고속 0.1초 릴레이 모드로 작동 중입니다.");
+                    await sendGuide("[+] 초고속 0.1초 무한 릴레이 모드로 작동 중입니다.");
                     return;
                 }
 
@@ -477,7 +476,6 @@ const setupCluster = (tokens, adminId, payloadType) => {
 
                     await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 봇 10마리가 2초 간격으로 순차 입장을 시작합니다.`);
                     
-                    // 2초(2000ms) 간격으로 10마리 순차 입장
                     for (const cli of myClients) {
                         try {
                             const g = cli.guilds.cache.get(guildId);
@@ -666,4 +664,4 @@ const setupCluster = (tokens, adminId, payloadType) => {
 };
 
 setupCluster(TOKENS_A, ADMIN_A_ID, 'A');
-setupCluster(TOKENS_B, ADMIN_B_ID, 'B'); 
+setupCluster(TOKENS_B, ADMIN_B_ID, 'B');
