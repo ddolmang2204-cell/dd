@@ -1,6 +1,6 @@
 /**
  * =====================================================================
- * Project: LIUXESE (코린 강명 에디션) - Immortal Infinite Loop Version
+ * Project: LIUXESE (코린 강명 에디션) - Full Immortal Version (A:17, B:10)
  * =====================================================================
  */
 
@@ -10,6 +10,10 @@ const { joinVoiceChannel, getVoiceConnection, createAudioPlayer, createAudioReso
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+
+// 전역 미처리 예외 방어
+process.on('unhandledRejection', () => {});
+process.on('uncaughtException', () => {});
 
 // Render 포트 감지용 Express 웹서버 세팅 (필수)
 const app = express();
@@ -30,12 +34,14 @@ const ADMIN_B_ID = "268406110690607104";
 let adminListA = [ADMIN_A_ID];
 let adminListB = [ADMIN_B_ID];
 
-// .env 파일에서 토큰 배열 로드
+// 환경 변수에서 토큰 배열 로드 (A: 17개, B: 10개)
 const TOKENS_A = [
     process.env.TOKEN_A_1, process.env.TOKEN_A_2, process.env.TOKEN_A_3,
     process.env.TOKEN_A_4, process.env.TOKEN_A_5, process.env.TOKEN_A_6,
     process.env.TOKEN_A_7, process.env.TOKEN_A_8, process.env.TOKEN_A_9,
-    process.env.TOKEN_A_10
+    process.env.TOKEN_A_10, process.env.TOKEN_A_11, process.env.TOKEN_A_12,
+    process.env.TOKEN_A_13, process.env.TOKEN_A_14, process.env.TOKEN_A_15,
+    process.env.TOKEN_A_16, process.env.TOKEN_A_17
 ].filter(Boolean);
 
 const TOKENS_B = [
@@ -70,9 +76,21 @@ const savePrefixes = (prefixes) => {
 
 const savedPrefixes = loadPrefixes();
 
+const createInitialState = (prefix) => ({
+    prefix,
+    autoReaction: null,
+    dmTasks: {},
+    sfTargets: {},
+    relayTimers: null,
+    relayGeneration: 0,
+    isRelaying: false,
+    dmInterval: 500,
+    audioPlayers: {}
+});
+
 const adminStates = {
-    [ADMIN_A_ID]: { prefix: savedPrefixes[ADMIN_A_ID], autoReaction: null, dmTasks: {}, sfTargets: {}, relayTimers: null, dmInterval: 500, audioPlayers: {} },
-    [ADMIN_B_ID]: { prefix: savedPrefixes[ADMIN_B_ID], autoReaction: null, dmTasks: {}, sfTargets: {}, relayTimers: null, dmInterval: 500, audioPlayers: {} }
+    [ADMIN_A_ID]: createInitialState(savedPrefixes[ADMIN_A_ID]),
+    [ADMIN_B_ID]: createInitialState(savedPrefixes[ADMIN_B_ID])
 };
 
 const getRandomSixDigit = () => Math.floor(100000 + Math.random() * 900000);
@@ -96,6 +114,17 @@ const generateLicenseKey = () => {
         if (i < 3) result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     return result;
+};
+
+const getTextChannelFast = async (cli, channelId) => {
+    if (!cli || !cli.isReady()) return null;
+    const cached = cli.channels.cache.get(channelId);
+    if (cached && typeof cached.send === 'function') return cached;
+    try {
+        const fetched = await cli.channels.fetch(channelId);
+        if (fetched && typeof fetched.send === 'function') return fetched;
+    } catch (_) {}
+    return null;
 };
 
 console.log("========================================");
@@ -132,12 +161,13 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 const myIndex = myClients.indexOf(client);
                 const currentPrefix = state.prefix;
 
-                // [최우선 긴급 정지 gaeum] -> 오직 이거로만 무한 루프 중지 가능
+                // [최우선 긴급 정지 gaeum]
                 if (message.content && message.content.startsWith(currentPrefix)) {
                     const rawCmd = message.content.slice(currentPrefix.length).trim().split(/ +/)[0];
                     if (rawCmd.toLowerCase() === "gaeum") {
-                        const guildId = message.guild?.id;
-                        if (guildId && state.relayTimers) {
+                        state.isRelaying = false;
+                        state.relayGeneration += 1;
+                        if (state.relayTimers) {
                             clearTimeout(state.relayTimers);
                             state.relayTimers = null;
                         }
@@ -167,10 +197,10 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 // [sf 기능] 타겟 유저 말 따라하기
                 if (state.sfTargets[message.channel.id] === userId && message.content && !message.content.startsWith(currentPrefix)) {
                     const randomCode = getRandomSixDigit();
-                    const contentToMimic = `${message.content}\n-# 코린이 강명 에디션 횟수 > (${randomCode})`;
+                    const contentToMimic = `${message.content}\n-# 코린이 근성 이긴 횟수 < (${randomCode})`;
                     try {
-                        const ch = await client.channels.fetch(message.channel.id);
-                        if (ch && ch.isText()) await ch.send(contentToMimic);
+                        const ch = await getTextChannelFast(client, message.channel.id);
+                        if (ch) await ch.send(contentToMimic);
                     } catch (e) {}
                     return;
                 }
@@ -220,7 +250,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         "made in heaven (코린)",
                         `라이센스 코드 : ${randomKey}`
                     ].join("\n");
-                    
+
                     const boxedHelp = `\`\`\`\n${helpText}\n\`\`\``;
                     try {
                         if (message.editable) await message.edit(boxedHelp);
@@ -229,8 +259,12 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     return;
                 }
 
-                // 관리자 유무와 관계없이 영원히 끝나지 않는 불멸의 무한 루프 엔진
+                // finally 블록으로 다음 반복을 안전하게 예약하는 릴레이 엔진 (0.35초 / 350ms 간격)
                 const startImmortalRelay = async (guideText, channelId, getContentFunc) => {
+                    state.isRelaying = false;
+                    state.relayGeneration += 1;
+                    const currentGen = state.relayGeneration;
+
                     if (state.relayTimers) {
                         clearTimeout(state.relayTimers);
                         state.relayTimers = null;
@@ -238,30 +272,38 @@ const setupCluster = (tokens, adminId, payloadType) => {
 
                     const boxedGuide = `\`\`\`\n${guideText}\n\`\`\``;
 
-                    myClients.forEach(async (cli) => {
-                        try {
-                            const ch = await cli.channels.fetch(channelId);
-                            if (ch && ch.isText()) await ch.send(boxedGuide);
-                        } catch (err) {}
-                    });
+                    await Promise.allSettled(
+                        myClients.map(async (cli) => {
+                            const ch = await getTextChannelFast(cli, channelId);
+                            if (ch) await ch.send(boxedGuide).catch(() => {});
+                        })
+                    );
 
+                    if (currentGen !== state.relayGeneration) return;
+
+                    state.isRelaying = true;
                     let botIndex = 0;
-                    const runNext = () => {
-                        if (!state.relayTimers) return; // 오직 gaeum이 칠해질 때만 해제됨
 
-                        const currentClient = myClients[botIndex];
-                        if (currentClient) {
-                            currentClient.channels.fetch(channelId).then(ch => {
-                                if (ch) {
-                                    const textToSend = getContentFunc();
-                                    ch.send(textToSend).catch(() => {});
-                                }
-                            }).catch(() => {});
+                    const runNext = async () => {
+                        if (!state.isRelaying || currentGen !== state.relayGeneration || myClients.length === 0) {
+                            return;
                         }
 
+                        const currentClient = myClients[botIndex % myClients.length];
                         botIndex = (botIndex + 1) % myClients.length;
-                        // 무한 루프 주기 (0.1초)
-                        state.relayTimers = setTimeout(runNext, 100);
+
+                        try {
+                            const ch = await getTextChannelFast(currentClient, channelId);
+                            if (ch && state.isRelaying && currentGen === state.relayGeneration) {
+                                const textToSend = getContentFunc();
+                                await ch.send(textToSend).catch(() => {});
+                            }
+                        } catch (_) {
+                        } finally {
+                            if (state.isRelaying && currentGen === state.relayGeneration) {
+                                state.relayTimers = setTimeout(runNext, 350);
+                            }
+                        }
                     };
 
                     state.relayTimers = setTimeout(runNext, 50);
@@ -282,7 +324,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
                     state.prefix = newPrefix;
-                    
+
                     const currentAllPrefixes = loadPrefixes();
                     currentAllPrefixes[adminId] = newPrefix;
                     savePrefixes(currentAllPrefixes);
@@ -392,17 +434,17 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 if (command === "nomu") {
                     let baseGeunseong = "";
                     if (payloadType === 'A') {
-                        baseGeunseong = "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 코린찬양해라애미뒤진새기들아 \n@everyone\nhttps://cdn.discordapp.com/attachments/1556620343651729419/1572211827062997053/1903434ecf68a313.gif?ex=6afd8bdd&is=6afc3a5d&hm=2eff99586f7c5f85d7ca0390e47a6971e3beb8729f237a73ef5edd7d1d57e20c&";
+                        baseGeunseong = "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 코린찬양해라애미뒤진새기들아 \n@everyone\nhttps://cdn.discordapp.com/attachments/1572902260193624136/1572909824201724016/2.gif?ex=6b0015ed&is=6afec46d&hm=776e4cebcb779e184725b91027b9f35b688e0153d22ec5706804cb45a1a9db8c&";
                     } else {
                         baseGeunseong = "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 강명찬양해라 좆밥들아ㅋㅋ\nhttps://cdn.discordapp.com/attachments/1571872351283453983/1572190547706384404/7.gif?ex=6afd780c&is=6afc268c&hm=d2a7c7c265d67ab1df54975d3d8ed153f7c3a3b431a6cbeb7cfa31fd36956a84&";
                     }
 
                     await startImmortalRelay(
-                        `[+] [Admin ${adminId.slice(-4)}] 10개 봇 무한 근성 도배를 시작합니다.`,
+                        `[+] [Admin ${adminId.slice(-4)}] ${myClients.length}개 봇 무한 근성 도배를 시작합니다.`,
                         message.channel.id,
                         () => {
                             const randomCode = getRandomSixDigit();
-                            return `${baseGeunseong}\n-# 코린이 강명 에디션 횟수 > (${randomCode})`;
+                            return `${baseGeunseong}\n-# 코린이 근성 이긴 횟수 < (${randomCode})`;
                         }
                     );
                     return;
@@ -419,7 +461,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         message.channel.id,
                         () => {
                             const randomCode = getRandomSixDigit();
-                            return `${param}\n-# 코린이 강명 에디션 횟수 > (${randomCode})`;
+                            return `${param}\n-# 코린이 근성 이긴 횟수 < (${randomCode})`;
                         }
                     );
                     return;
@@ -432,14 +474,14 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         () => {
                             const randomWord = getRandomTtWord();
                             const randomCode = getRandomSixDigit();
-                            return `${randomWord}\n-# 코린이 강명 에디션 횟수 > (${randomCode})`;
+                            return `${randomWord}\n-# 코린이 근성 이긴 횟수 < (${randomCode})`;
                         }
                     );
                     return;
                 }
 
                 if (command === "unji") {
-                    await sendGuide("[+] 초고속 0.1초 무한 릴레이 모드로 작동 중입니다.");
+                    await sendGuide("[+] 초고속 0.35초 무한 릴레이 모드로 작동 중입니다.");
                     return;
                 }
 
@@ -449,18 +491,20 @@ const setupCluster = (tokens, adminId, payloadType) => {
 
                     let targetChannelId = args[0];
                     if (!targetChannelId) {
-                        try {
-                            const guild = message.guild;
-                            const member = await guild.members.fetch(message.author.id);
-                            targetChannelId = member.voice.channelId;
-                        } catch (e) {}
+                        targetChannelId = message.member?.voice?.channelId || null;
+                        if (!targetChannelId) {
+                            try {
+                                const member = await message.guild.members.fetch(message.author.id);
+                                targetChannelId = member?.voice?.channelId || null;
+                            } catch (e) {}
+                        }
                     }
 
                     if (!targetChannelId) {
                         await sendGuide("[-] 음성 채널에 들어가 있거나 올바른 채널 ID를 입력한 후 사용해주세요.");
                         for (const cli of myClients) {
                             try {
-                                if (state.audioPlayers[cli.user.id]) {
+                                if (cli.user && state.audioPlayers[cli.user.id]) {
                                     state.audioPlayers[cli.user.id].stop();
                                     delete state.audioPlayers[cli.user.id];
                                 }
@@ -474,19 +518,28 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
 
-                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 봇 10마리가 2초 간격으로 순차 입장을 시작합니다.`);
-                    
+                    await sendGuide(`[+] [Admin ${adminId.slice(-4)} / ${payloadType}] 봇 ${myClients.length}마리가 2초 간격으로 순차 입장을 시작합니다.`);
+
                     for (const cli of myClients) {
                         try {
+                            if (!cli || !cli.isReady()) continue;
                             const g = cli.guilds.cache.get(guildId);
                             if (g) {
-                                joinVoiceChannel({
-                                    channelId: targetChannelId,
-                                    guildId: g.id,
-                                    adapterCreator: g.voiceAdapterCreator,
-                                    selfDeaf: false,
-                                    selfMute: false
-                                });
+                                const voiceCh = g.channels.cache.get(targetChannelId);
+                                if (voiceCh && voiceCh.isVoiceBased()) {
+                                    const existingConn = getVoiceConnection(g.id);
+                                    if (existingConn) {
+                                        existingConn.destroy();
+                                        await new Promise(r => setTimeout(r, 200));
+                                    }
+                                    joinVoiceChannel({
+                                        channelId: voiceCh.id,
+                                        guildId: g.id,
+                                        adapterCreator: g.voiceAdapterCreator,
+                                        selfDeaf: false,
+                                        selfMute: false
+                                    });
+                                }
                             }
                         } catch (e) {}
                         await new Promise(r => setTimeout(r, 2000));
@@ -510,7 +563,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         return;
                     }
 
-                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 봇 10마리 전체 ${fileName} 무한 루프 재생을 시작합니다!`);
+                    await sendGuide(`[+] [Admin ${adminId.slice(-4)}] 봇 ${myClients.length}마리 전체 ${fileName} 무한 루프 재생을 시작합니다!`);
                     for (const cli of myClients) {
                         try {
                             const conn = getVoiceConnection(guildId);
@@ -601,19 +654,19 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     }
 
                     await sendGuide(`[+] ${targetUser.tag || targetUser.id}님에게 DM 테러를 시작합니다.`);
-                    let spamContent = (payloadType === 'A') 
-                        ? "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 코린찬양해라애미뒤진새기들아 \n@everyone\nhttps://cdn.discordapp.com/attachments/1556620343651729419/1572211827062997053/1903434ecf68a313.gif?ex=6afd8bdd&is=6afc3a5d&hm=2eff99586f7c5f85d7ca0390e47a6971e3beb8729f237a73ef5edd7d1d57e20c&"
+                    let spamContent = (payloadType === 'A')
+                        ? "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 코린찬양해라애미뒤진새기들아 \n@everyone\nhttps://cdn.discordapp.com/attachments/1572902260193624136/1572909824201724016/2.gif?ex=6b0015ed&is=6afec46d&hm=776e4cebcb779e184725b91027b9f35b688e0153d22ec5706804cb45a1a9db8c&"
                         : "A\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n\nA\n\n\n\n# 강명찬양해라 좆밥들아ㅋㅋ\nhttps://cdn.discordapp.com/attachments/1571872351283453983/1572190547706384404/7.gif?ex=6afd780c&is=6afc268c&hm=d2a7c7c265d67ab1df54975d3d8ed153f7c3a3b431a6cbeb7cfa31fd36956a84&";
 
                     for (const cli of myClients) {
                         if (state.dmTasks[cli.user.id]) clearInterval(state.dmTasks[cli.user.id]);
                         const dmSpeed = state.dmInterval;
                         state.dmTasks[cli.user.id] = setInterval(async () => {
-                            try { 
+                            try {
                                 const target = await cli.users.fetch(targetUser.id).catch(() => null);
                                 if (target) {
                                     const randomCode = getRandomSixDigit();
-                                    await target.send(`${spamContent}\n-# 코린이 강명 에디션 횟수 > (${randomCode})`);
+                                    await target.send(`${spamContent}\n-# 코린이 근성 이긴 횟수 < (${randomCode})`);
                                 }
                             } catch {
                                 if (state.dmTasks[cli.user.id]) {
