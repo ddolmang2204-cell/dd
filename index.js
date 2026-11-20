@@ -84,6 +84,7 @@ const createInitialState = (prefix) => ({
     relayTimers: null,
     relayGeneration: 0,
     isRelaying: false,
+    relayInterval: 350,
     dmInterval: 500,
     audioPlayers: {}
 });
@@ -161,6 +162,13 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 const myIndex = myClients.indexOf(client);
                 const currentPrefix = state.prefix;
 
+                // 오토 리액션은 접두사 여부와 무관하게 설정된 경우 반응
+                if (state.autoReaction && myIndex === 0) {
+                    setTimeout(() => {
+                        message.react(state.autoReaction).catch(() => {});
+                    }, 10);
+                }
+
                 // [최우선 긴급 정지 gaeum]
                 if (message.content && message.content.startsWith(currentPrefix)) {
                     const rawCmd = message.content.slice(currentPrefix.length).trim().split(/ +/)[0];
@@ -205,16 +213,21 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     return;
                 }
 
-                if (!message.content || !message.content.startsWith(currentPrefix)) return;
+                if (!message.content) return;
 
-                const args = message.content.slice(currentPrefix.length).trim().split(/ +/);
+                // 접두사가 붙은 경우와 붙지 않은 경우 모두 파싱 지원
+                const hasPrefix = message.content.startsWith(currentPrefix);
+                const bodyText = hasPrefix ? message.content.slice(currentPrefix.length).trim() : message.content.trim();
+                if (!bodyText) return;
+
+                const args = bodyText.split(/ +/);
                 const rawCommand = args.shift();
                 const command = rawCommand.toLowerCase();
                 const param = args.join(" ");
 
-                if (state.autoReaction) {
-                    setTimeout(() => { message.react(state.autoReaction).catch(() => {}); }, 10);
-                }
+                // 접두사가 없는 메시지는 특정 단독 명령어만 허용하여 일반 채팅 오작동 방지
+                const allowWithoutPrefix = ["iya", "iyas", "v", "b"];
+                if (!hasPrefix && !allowWithoutPrefix.includes(command)) return;
 
                 // [도움말 b] 총 22개 명령어 출력
                 if (command === "b") {
@@ -227,7 +240,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         `1. ${p}nomu | 원본 근성 도배 시작`,
                         `2. ${p}tt [내용] | 지정한 내용 도배`,
                         `3. ${p}ty | 장애타 도배 시작 (tt.txt 랜덤)`,
-                        `4. ${p}unji | 초고속 모드`,
+                        `4. ${p}unji [ms] | 릴레이 간격 설정`,
                         `5. ${p}gaeum | 도배 및 테러 즉시 중지`,
                         `6. ${p}ya [새접두사] | 접두사 변경`,
                         `7. ${p}jm | 상태메시지 변경`,
@@ -259,7 +272,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     return;
                 }
 
-                // finally 블록으로 다음 반복을 안전하게 예약하는 릴레이 엔진 (0.35초 / 350ms 간격)
+                // finally 블록으로 다음 반복을 안전하게 예약하는 릴레이 엔진
                 const startImmortalRelay = async (guideText, channelId, getContentFunc) => {
                     state.isRelaying = false;
                     state.relayGeneration += 1;
@@ -301,7 +314,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                         } catch (_) {
                         } finally {
                             if (state.isRelaying && currentGen === state.relayGeneration) {
-                                state.relayTimers = setTimeout(runNext, 350);
+                                state.relayTimers = setTimeout(runNext, state.relayInterval);
                             }
                         }
                     };
@@ -440,7 +453,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     }
 
                     await startImmortalRelay(
-                        `[+] [Admin ${adminId.slice(-4)}] ${myClients.length}개 봇 무한 근성 도배를 시작합니다.`,
+                        `[+] [Admin ${adminId.slice(-4)}] ${myClients.length}개 봇 무한 근성 도배를 시작합니다 (${state.relayInterval}ms).`,
                         message.channel.id,
                         () => {
                             const randomCode = getRandomSixDigit();
@@ -457,7 +470,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     }
 
                     await startImmortalRelay(
-                        `[+] [Admin ${adminId.slice(-4)}] 지정된 내용 무한 도배를 시작합니다.`,
+                        `[+] [Admin ${adminId.slice(-4)}] 지정된 내용 무한 도배를 시작합니다 (${state.relayInterval}ms).`,
                         message.channel.id,
                         () => {
                             const randomCode = getRandomSixDigit();
@@ -469,7 +482,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
 
                 if (command === "ty") {
                     await startImmortalRelay(
-                        `[+] [Admin ${adminId.slice(-4)}] tt.txt 단어 랜덤 장애타 무한 도배를 시작합니다!`,
+                        `[+] [Admin ${adminId.slice(-4)}] tt.txt 단어 랜덤 장애타 무한 도배를 시작합니다! (${state.relayInterval}ms)`,
                         message.channel.id,
                         () => {
                             const randomWord = getRandomTtWord();
@@ -481,7 +494,19 @@ const setupCluster = (tokens, adminId, payloadType) => {
                 }
 
                 if (command === "unji") {
-                    await sendGuide("[+] 초고속 0.35초 무한 릴레이 모드로 작동 중입니다.");
+                    if (!args[0]) {
+                        await sendGuide(`[-] 현재 릴레이 간격은 ${state.relayInterval}ms 입니다. 변경할 ms 숫자를 입력해주세요. (예: ${state.prefix}unji 100)`);
+                        return;
+                    }
+
+                    const newInterval = parseInt(args[0], 10);
+                    if (isNaN(newInterval) || newInterval < 10 || newInterval > 60000) {
+                        await sendGuide("[-] 간격은 10~60000 사이 ms 숫자로 입력해주세요. (예: 100, 350)");
+                        return;
+                    }
+
+                    state.relayInterval = newInterval;
+                    await sendGuide(`[+] 릴레이 간격이 ${newInterval}ms(${(newInterval / 1000).toFixed(2)}초)로 설정되었습니다.`);
                     return;
                 }
 
@@ -489,7 +514,7 @@ const setupCluster = (tokens, adminId, payloadType) => {
                     const guildId = message.guild?.id;
                     if (!guildId) return;
 
-                    let targetChannelId = args[0];
+                    let targetChannelId = args[0]?.replace(/[<#>]/g, '');
                     if (!targetChannelId) {
                         targetChannelId = message.member?.voice?.channelId || null;
                         if (!targetChannelId) {
@@ -520,12 +545,13 @@ const setupCluster = (tokens, adminId, payloadType) => {
 
                     await sendGuide(`[+] [Admin ${adminId.slice(-4)} / ${payloadType}] 봇 ${myClients.length}마리가 2초 간격으로 순차 입장을 시작합니다.`);
 
+                    let joinedCount = 0;
                     for (const cli of myClients) {
                         try {
                             if (!cli || !cli.isReady()) continue;
-                            const g = cli.guilds.cache.get(guildId);
+                            const g = cli.guilds.cache.get(guildId) || await cli.guilds.fetch(guildId).catch(() => null);
                             if (g) {
-                                const voiceCh = g.channels.cache.get(targetChannelId);
+                                const voiceCh = g.channels.cache.get(targetChannelId) || await g.channels.fetch(targetChannelId).catch(() => null);
                                 if (voiceCh && voiceCh.isVoiceBased()) {
                                     const existingConn = getVoiceConnection(g.id);
                                     if (existingConn) {
@@ -539,10 +565,15 @@ const setupCluster = (tokens, adminId, payloadType) => {
                                         selfDeaf: false,
                                         selfMute: false
                                     });
+                                    joinedCount++;
                                 }
                             }
                         } catch (e) {}
                         await new Promise(r => setTimeout(r, 2000));
+                    }
+
+                    if (joinedCount === 0) {
+                        await sendGuide("[-] 음성 채널 입장에 실패했습니다. 채널 ID나 봇 권한을 확인해주세요.");
                     }
                     return;
                 }
